@@ -53,10 +53,10 @@ async function getVideoInfoWithPuppeteer(url) {
       const info = await ytdl.getInfo(url, {
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Referer': 'https://www.youtube.com/',
+            'Referer': 'https://www.google.com/',
           }
         }
       });
@@ -127,147 +127,241 @@ async function getVideoInfoWithPuppeteer(url) {
       console.log('ytdl-core failed, falling back to Puppeteer:', ytdlError.message);
     }
     
-    // If we're here, ytdl-core failed or found no formats, try Puppeteer as fallback
+    // Helper function for random delays to mimic human behavior
+    const randomDelay = async (min, max) => {
+      const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+      return new Promise(resolve => setTimeout(resolve, delay));
+    };
+    
+    // Launch browser with enhanced stealth options
     browser = await puppeteer.launch({
       headless: "new",
       args: [
-        '--no-sandbox', 
+        '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-features=site-per-process',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ]
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080'
+      ],
+      ignoreDefaultArgs: ['--enable-automation']
     });
     
-    // Create a new incognito browser context
-    const context = await browser.createIncognitoBrowserContext();
-    const page = await context.newPage();
+    const page = await browser.newPage();
     
-    // Set viewport and user agent
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+    // Set viewport and user agent to a common configuration
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     
-    // Set longer timeouts
-    page.setDefaultNavigationTimeout(60000);
-    page.setDefaultTimeout(60000);
-    
-    // Block unnecessary resources to speed up page load
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const resourceType = req.resourceType();
-      if (resourceType === 'image' || resourceType === 'font' || resourceType === 'media') {
-        req.abort();
-      } else {
-        req.continue();
-      }
+    // Add extra headers to appear more like a real browser
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Referer': 'https://www.google.com/',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"'
     });
     
-    console.log(`Attempting to navigate to ${url}`);
-    
-    // Navigate directly to the URL
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 60000 
-    });
-    
-    console.log('Page loaded, extracting basic info');
-    
-    // Extract basic video info using meta tags (more reliable)
-    const videoInfo = await page.evaluate(() => {
-      const getMetaContent = (name) => {
-        const meta = document.querySelector(`meta[${name}]`);
-        return meta ? meta.getAttribute('content') : null;
+    // Add human-like browser fingerprinting evasion
+    await page.evaluateOnNewDocument(() => {
+      // Override navigator properties to avoid detection
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5].map(() => ({ length: 0 })) });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+      
+      // Add fake WebGL vendor and renderer
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'Intel Inc.';
+        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+        return getParameter.apply(this, arguments);
       };
+    });
+    
+    // Navigate to the video page with increased timeout
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // Wait for title to be available
+    await page.waitForSelector('title', { timeout: 5000 });
+    
+    // Perform random human-like interactions
+    await randomDelay(1000, 3000);
+    
+    // Simulate scrolling like a human would
+    await page.evaluate(() => {
+      return new Promise((resolve) => {
+        let totalHeight = 0;
+        const distance = Math.floor(Math.random() * 100) + 50;
+        const scrollInterval = Math.floor(Math.random() * 200) + 100;
+        
+        const timer = setInterval(() => {
+          window.scrollBy(0, distance);
+          totalHeight += distance;
+          
+          if (totalHeight >= 800) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, scrollInterval);
+      });
+    });
+    
+    await randomDelay(500, 2000);
+    
+    // Extract video information
+    const videoInfo = await page.evaluate(() => {
+      // Check if video is available
+      if (document.querySelector('.promo-title')) {
+        const promoText = document.querySelector('.promo-title').innerText;
+        if (promoText.includes('unavailable')) {
+          throw new Error('Video unavailable');
+        }
+      }
       
-      const title = 
-        document.querySelector('meta[property="og:title"]')?.content || 
-        document.querySelector('title')?.innerText?.replace(' - YouTube', '') || 
-        'Unknown Title';
+      // Get video title
+      const title = document.querySelector('meta[property="og:title"]')?.content || 
+                    document.querySelector('title')?.innerText?.replace(' - YouTube', '') || 
+                    'Unknown Title';
       
+      // Get channel name
+      const channelName = document.querySelector('link[itemprop="name"]')?.content || 
+                          document.querySelector('[itemprop="author"] [itemprop="name"]')?.content || 
+                          'Unknown Channel';
+      
+      // Get thumbnail
       const thumbnail = document.querySelector('meta[property="og:image"]')?.content || '';
+      
+      // Get video duration (in seconds)
+      let duration = 0;
+      const durationMeta = document.querySelector('meta[itemprop="duration"]')?.content;
+      if (durationMeta) {
+        // Parse ISO 8601 duration format (PT1H2M3S)
+        const match = durationMeta.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        if (match) {
+          const hours = parseInt(match[1] || 0);
+          const minutes = parseInt(match[2] || 0);
+          const seconds = parseInt(match[3] || 0);
+          duration = hours * 3600 + minutes * 60 + seconds;
+        }
+      }
       
       return {
         title,
+        channelName,
         thumbnail,
-        channelName: document.querySelector('meta[name="author"]')?.content || 'Unknown Channel',
+        duration
       };
     });
     
-    console.log('Basic info extracted:', videoInfo.title);
+    console.log('Video title:', videoInfo.title);
     
-    // Close browser to free resources
-    await browser.close();
-    browser = null;
+    // Extract cookies from the page to use with ytdl-core
+    const cookies = await page.cookies();
+    const cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
     
-    // Now use ytdl-core to get formats
-    const info = await ytdl.getInfo(url, {
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-          'Referer': 'https://www.youtube.com/',
+    console.log('Extracted cookies from authenticated session');
+    
+    // Now extract available formats using ytdl-core with the cookies
+    try {
+      // Wait a bit before making the ytdl request
+      await randomDelay(1000, 2000);
+      
+      const info = await ytdl.getInfo(url, {
+        requestOptions: {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Referer': 'https://www.google.com/',
+            'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'Cookie': cookieString
+          }
+        }
+      });
+      
+      // Filter formats
+      let availableFormats = info.formats.filter(format => {
+        return format.hasVideo && 
+               format.container === 'mp4' &&
+               format.height &&
+               format.height >= 144;
+      });
+      
+      // Sort by quality (height) descending
+      availableFormats.sort((a, b) => (b.height || 0) - (a.height || 0));
+      
+      // Remove duplicates based on height
+      const uniqueFormats = [];
+      const seenHeights = new Set();
+      
+      for (const format of availableFormats) {
+        if (!seenHeights.has(format.height) && format.itag) {
+          seenHeights.add(format.height);
+          
+          // Calculate approximate file size if not available
+          let filesize = null;
+          if (format.contentLength) {
+            filesize = parseInt(format.contentLength);
+          } else if (format.bitrate && info.videoDetails.lengthSeconds) {
+            // Rough estimation: bitrate * duration / 8
+            filesize = Math.floor((format.bitrate * parseInt(info.videoDetails.lengthSeconds)) / 8);
+          }
+          
+          uniqueFormats.push({
+            itag: format.itag,
+            ext: 'mp4',
+            height: format.height,
+            width: format.width,
+            fps: format.fps || 30,
+            filesize: filesize,
+            quality_label: `${format.height}p${(format.fps && format.fps > 30) ? format.fps : ''}`,
+            qualityLabel: format.qualityLabel || `${format.height}p`,
+            bitrate: format.bitrate,
+            hasAudio: format.hasAudio || false,
+            hasVideo: format.hasVideo || false,
+            isAdaptive: !format.hasAudio
+          });
         }
       }
-    });
-    
-    // Filter formats
-    let availableFormats = info.formats.filter(format => {
-      return format.hasVideo && 
-             format.container === 'mp4' &&
-             format.height &&
-             format.height >= 144;
-    });
-    
-    // Sort by quality (height) descending
-    availableFormats.sort((a, b) => (b.height || 0) - (a.height || 0));
-    
-    // Remove duplicates based on height
-    const uniqueFormats = [];
-    const seenHeights = new Set();
-    
-    for (const format of availableFormats) {
-      if (!seenHeights.has(format.height) && format.itag) {
-        seenHeights.add(format.height);
-        
-        // Calculate approximate file size if not available
-        let filesize = null;
-        if (format.contentLength) {
-          filesize = parseInt(format.contentLength);
-        } else if (format.bitrate && info.videoDetails.lengthSeconds) {
-          // Rough estimation: bitrate * duration / 8
-          filesize = Math.floor((format.bitrate * parseInt(info.videoDetails.lengthSeconds)) / 8);
-        }
-        
-        uniqueFormats.push({
-          itag: format.itag,
-          ext: 'mp4',
-          height: format.height,
-          width: format.width,
-          fps: format.fps || 30,
-          filesize: filesize,
-          quality_label: `${format.height}p${(format.fps && format.fps > 30) ? format.fps : ''}`,
-          qualityLabel: format.qualityLabel || `${format.height}p`,
-          bitrate: format.bitrate,
-          hasAudio: format.hasAudio || false,
-          hasVideo: format.hasVideo || false,
-          isAdaptive: !format.hasAudio
-        });
-      }
+      
+      console.log('Unique formats found:', uniqueFormats.length);
+      
+      return {
+        title: videoInfo.title,
+        duration: videoInfo.duration || parseInt(info.videoDetails.lengthSeconds),
+        thumbnail: videoInfo.thumbnail,
+        uploader: videoInfo.channelName,
+        formats: uniqueFormats
+      };
+    } catch (ytdlError) {
+      console.error('ytdl-core error:', ytdlError.message);
+      
+      // If ytdl-core fails, return basic info without formats
+      return {
+        title: videoInfo.title,
+        duration: videoInfo.duration,
+        thumbnail: videoInfo.thumbnail,
+        uploader: videoInfo.channelName,
+        formats: [],
+        error: 'Could not retrieve formats: ' + ytdlError.message
+      };
     }
-    
-    console.log('Unique formats found:', uniqueFormats.length);
-    
-    return {
-      title: videoInfo.title,
-      duration: parseInt(info.videoDetails.lengthSeconds),
-      thumbnail: videoInfo.thumbnail,
-      uploader: videoInfo.channelName,
-      formats: uniqueFormats
-    };
   } catch (error) {
     console.error('Error in Puppeteer video info extraction:', error.message);
     if (browser) {
