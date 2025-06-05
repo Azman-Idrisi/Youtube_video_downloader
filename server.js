@@ -11,7 +11,7 @@ const puppeteer = require('puppeteer');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -42,10 +42,15 @@ async function getVideoInfoWithPuppeteer(url) {
   try {
     console.log('Fetching video info with Puppeteer for:', url);
     
-    // Launch browser
+    // Launch browser with options for serverless environment
     browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process'
+      ]
     });
     
     const page = await browser.newPage();
@@ -427,9 +432,17 @@ async function downloadVideo(url, itag, res) {
       console.log(`Best audio format found: ${bestAudioFormat.audioBitrate}kbps (${bestAudioFormat.itag})`);
       
       // Create temporary files for video and audio
-      const tempDir = path.join(__dirname, 'temp');
+      let tempDir = path.join(__dirname, 'temp');
+      // Ensure temp directory exists
       if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir);
+        try {
+          fs.mkdirSync(tempDir, { recursive: true });
+          console.log('Created temp directory:', tempDir);
+        } catch (err) {
+          console.error('Error creating temp directory:', err);
+          // Fall back to /tmp for serverless environments
+          tempDir = '/tmp';
+        }
       }
       
       const tempVideoPath = path.join(tempDir, `video-${Date.now()}.mp4`);
@@ -629,6 +642,19 @@ app.get('/download', async (req, res) => {
       });
     }
   }
+});
+
+/**
+ * GET /progress - Get download progress information
+ * This is a placeholder endpoint for Vercel deployment
+ */
+app.get('/progress', (req, res) => {
+  // In a serverless environment, we can't track progress between requests
+  // This is a placeholder that returns a generic response
+  res.json({
+    progress: 100,
+    status: 'complete'
+  });
 });
 
 /**

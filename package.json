@@ -4,7 +4,7 @@
   "description": "Personal YouTube video downloader using @distube/ytdl-core",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
@@ -26,5 +26,8 @@
     "ytdl-core"
   ],
   "author": "Personal Use",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": "18.x"
+  }
 }
