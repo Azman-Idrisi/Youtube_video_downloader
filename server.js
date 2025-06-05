@@ -5,7 +5,11 @@ const fs = require('fs');
 const ytdl = require('@distube/ytdl-core');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const puppeteer = require('puppeteer');
+
+// Replace standard puppeteer with puppeteer-extra + stealth plugin
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
 // Set ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -17,6 +21,17 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
+
+/**
+ * Helper function to add random delay to simulate human behavior
+ * @param {number} min - Minimum delay in ms
+ * @param {number} max - Maximum delay in ms
+ * @returns {Promise} Promise that resolves after the delay
+ */
+async function randomDelay(min, max) {
+  const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+  return new Promise(resolve => setTimeout(resolve, delay));
+}
 
 /**
  * Check if ytdl-core is working
@@ -42,23 +57,89 @@ async function getVideoInfoWithPuppeteer(url) {
   try {
     console.log('Fetching video info with Puppeteer for:', url);
     
-    // Launch browser
+    // Launch browser with enhanced stealth options
     browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080'
+      ],
+      ignoreDefaultArgs: ['--enable-automation']
     });
     
     const page = await browser.newPage();
     
-    // Set viewport and user agent
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+    // Set viewport and user agent to a common configuration
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     
-    // Navigate to the video page
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    // Add extra headers to appear more like a real browser
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Referer': 'https://www.google.com/',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"'
+    });
+    
+    // Add human-like browser fingerprinting evasion
+    await page.evaluateOnNewDocument(() => {
+      // Override navigator properties to avoid detection
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5].map(() => ({ length: 0 })) });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+      
+      // Add fake WebGL vendor and renderer
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'Intel Inc.';
+        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+        return getParameter.apply(this, arguments);
+      };
+    });
+    
+    // Navigate to the video page with increased timeout
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
     
     // Wait for title to be available
     await page.waitForSelector('title', { timeout: 5000 });
+    
+    // Perform random human-like interactions
+    await randomDelay(1000, 3000);
+    
+    // Simulate scrolling like a human would
+    await page.evaluate(() => {
+      return new Promise((resolve) => {
+        let totalHeight = 0;
+        const distance = Math.floor(Math.random() * 100) + 50;
+        const scrollInterval = Math.floor(Math.random() * 200) + 100;
+        
+        const timer = setInterval(() => {
+          window.scrollBy(0, distance);
+          totalHeight += distance;
+          
+          if (totalHeight >= 800) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, scrollInterval);
+      });
+    });
+    
+    await randomDelay(500, 2000);
     
     // Extract video information
     const videoInfo = await page.evaluate(() => {
@@ -107,23 +188,33 @@ async function getVideoInfoWithPuppeteer(url) {
     
     console.log('Video title:', videoInfo.title);
     
-    // Now extract available formats using ytdl-core
+    // Extract cookies from the page to use with ytdl-core
+    const cookies = await page.cookies();
+    const cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+    
+    console.log('Extracted cookies from authenticated session');
+    
+    // Now extract available formats using ytdl-core with the cookies
     try {
+      // Wait a bit before making the ytdl request
+      await randomDelay(1000, 2000);
+      
       const info = await ytdl.getInfo(url, {
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Referer': 'https://www.youtube.com/',
-            'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+            'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
             'sec-fetch-dest': 'document',
             'sec-fetch-mode': 'navigate',
             'sec-fetch-site': 'same-origin',
             'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1'
+            'upgrade-insecure-requests': '1',
+            'Cookie': cookieString
           }
         }
       });
@@ -219,22 +310,70 @@ async function getVideoInfo(url) {
 
     console.log('Fetching video info for:', url);
 
+    // First get cookies using puppeteer to bypass bot detection
+    console.log('Getting authenticated cookies with Puppeteer for getVideoInfo');
+    let browser = null;
+    let cookieString = '';
+    
+    try {
+      browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-blink-features=AutomationControlled'
+        ],
+        ignoreDefaultArgs: ['--enable-automation']
+      });
+      
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      
+      // Add human-like browser fingerprinting evasion
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5].map(() => ({ length: 0 })) });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      });
+      
+      await page.goto('https://www.youtube.com/watch?v=' + url.split('v=')[1].split('&')[0], { 
+        waitUntil: 'networkidle2', 
+        timeout: 30000 
+      });
+      
+      await randomDelay(1000, 2000);
+      
+      // Extract cookies
+      const cookies = await page.cookies();
+      cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+      console.log('Successfully extracted cookies for getVideoInfo');
+    } catch (err) {
+      console.error('Error getting cookies with Puppeteer:', err);
+      // Continue without cookies if there's an error
+    } finally {
+      if (browser) await browser.close();
+    }
+
     // Get video info with additional options for better compatibility
     const info = await ytdl.getInfo(url, {
       requestOptions: {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
           'Referer': 'https://www.youtube.com/',
-          'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+          'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
           'sec-ch-ua-mobile': '?0',
           'sec-ch-ua-platform': '"Windows"',
           'sec-fetch-dest': 'document',
           'sec-fetch-mode': 'navigate',
           'sec-fetch-site': 'same-origin',
           'sec-fetch-user': '?1',
-          'upgrade-insecure-requests': '1'
+          'upgrade-insecure-requests': '1',
+          'Cookie': cookieString
         }
       }
     }).catch(error => {
@@ -352,8 +491,64 @@ async function downloadVideo(url, itag, res) {
       return res.status(400).json({ error: 'Invalid YouTube URL' });
     }
 
-    // Get video info to get the title for filename
-    const info = await ytdl.getInfo(url);
+    // First get cookies using puppeteer to bypass bot detection
+    console.log('Getting authenticated cookies with Puppeteer');
+    let browser = null;
+    let cookieString = '';
+    
+    try {
+      browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-blink-features=AutomationControlled'
+        ],
+        ignoreDefaultArgs: ['--enable-automation']
+      });
+      
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      
+      // Add human-like browser fingerprinting evasion
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      });
+      
+      await page.goto('https://www.youtube.com/watch?v=' + url.split('v=')[1].split('&')[0], { 
+        waitUntil: 'networkidle2', 
+        timeout: 30000 
+      });
+      
+      await randomDelay(1000, 2000);
+      
+      // Extract cookies
+      const cookies = await page.cookies();
+      cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+      console.log('Successfully extracted cookies');
+    } catch (err) {
+      console.error('Error getting cookies with Puppeteer:', err);
+      // Continue without cookies if there's an error
+    } finally {
+      if (browser) await browser.close();
+    }
+
+    // Get video info to get the title for filename with enhanced headers
+    const info = await ytdl.getInfo(url, {
+      requestOptions: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Referer': 'https://www.youtube.com/',
+          'Cookie': cookieString
+        }
+      }
+    });
+    
     const title = info.videoDetails.title
       .replace(/[^\w\s.-]/gi, '') // Remove special characters
       .replace(/\s+/g, '_') // Replace spaces with underscores
@@ -378,13 +573,17 @@ async function downloadVideo(url, itag, res) {
     // Check if the format has both video and audio
     if (format.hasVideo && format.hasAudio) {
       console.log('Format has both video and audio, streaming directly');
-      // Create download stream with specified quality
+      // Create download stream with specified quality and cookies
       const stream = ytdl(url, {
         quality: itag,
         filter: format => format.itag == itag,
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Referer': 'https://www.youtube.com/',
+            'Cookie': cookieString
           }
         }
       });
@@ -429,7 +628,7 @@ async function downloadVideo(url, itag, res) {
       // Create temporary files for video and audio
       const tempDir = path.join(__dirname, 'temp');
       if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir); //jeorjeo
+        fs.mkdirSync(tempDir); 
       }
       
       const tempVideoPath = path.join(tempDir, `video-${Date.now()}.mp4`);
@@ -444,7 +643,11 @@ async function downloadVideo(url, itag, res) {
         quality: itag,
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Referer': 'https://www.youtube.com/',
+            'Cookie': cookieString
           }
         }
       });
@@ -453,7 +656,11 @@ async function downloadVideo(url, itag, res) {
         quality: bestAudioFormat.itag,
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Referer': 'https://www.youtube.com/',
+            'Cookie': cookieString
           }
         }
       });
@@ -586,10 +793,22 @@ app.get('/formats', async (req, res) => {
     res.json(videoInfo);
   } catch (error) {
     console.error('Error getting video info:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch video information', 
-      details: error.message 
-    });
+    
+    // Check for specific bot detection or sign in errors
+    if (error.message.includes('Sign in to confirm') || 
+        error.message.includes('bot') || 
+        error.message.includes('confirm your identity')) {
+      res.status(429).json({
+        error: 'YouTube bot detection triggered',
+        details: 'YouTube is requiring sign-in to confirm you are not a bot. The application is attempting to bypass this restriction.',
+        message: error.message
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Failed to fetch video information', 
+        details: error.message 
+      });
+    }
   }
 });
 

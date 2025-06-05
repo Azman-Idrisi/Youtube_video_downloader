@@ -389,8 +389,21 @@
                 console.error('Error fetching formats:', error);
                 
                 // Check for bot detection message
-                if (error.message.includes('bot detection')) {
-                    showError('YouTube is blocking this request. Please try a different video or try again later.');
+                if (error.message.includes('bot detection') || 
+                    error.message.includes('Sign in to confirm') || 
+                    error.message.includes('bot')) {
+                    showError('YouTube bot detection triggered. The application is attempting to bypass this restriction. Please try again in a few seconds or try a different video.');
+                    
+                    // Add a retry button
+                    const errorDiv = document.getElementById('errorState');
+                    if (!document.getElementById('retryButton')) {
+                        const retryBtn = document.createElement('button');
+                        retryBtn.id = 'retryButton';
+                        retryBtn.className = 'mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none transition-all duration-200';
+                        retryBtn.textContent = 'Retry with Enhanced Protection';
+                        retryBtn.onclick = fetchFormats;
+                        errorDiv.appendChild(retryBtn);
+                    }
                 } else {
                     showError(error.message || 'Failed to fetch video information. Please check the URL and try again.');
                 }
