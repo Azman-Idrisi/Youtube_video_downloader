@@ -88,6 +88,21 @@
             </div>
         </div>
 
+        <!-- Vercel Environment Notice -->
+        <div id="vercelNotice" class="hidden bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r-lg">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <span class="text-blue-500 text-xl">ℹ️</span>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-blue-800 font-medium">Cloud Environment Limitations</h3>
+                    <p class="text-blue-700 mt-1">
+                        You're using our cloud-hosted version which has some limitations. High-quality formats that require merging audio and video are marked but may not work. For full functionality, consider using the local version.
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- Loading State -->
         <div id="loadingState" class="hidden text-center py-12">
             <div class="loading-spinner mx-auto mb-4" style="width: 40px; height: 40px; border-width: 4px;"></div>
@@ -262,13 +277,20 @@
             document.getElementById('videoDuration').textContent = formatDuration(data.duration);
             document.getElementById('videoThumbnail').src = data.thumbnail || '';
             
+            // Show Vercel notice if we're in Vercel environment
+            if (data.isVercelEnvironment) {
+                document.getElementById('vercelNotice').classList.remove('hidden');
+            } else {
+                document.getElementById('vercelNotice').classList.add('hidden');
+            }
+            
             // Display formats
             const formatsList = document.getElementById('formatsList');
             formatsList.innerHTML = '';
             
             if (data.formats && data.formats.length > 0) {
                 data.formats.forEach(format => {
-                    const formatCard = createFormatCard(format);
+                    const formatCard = createFormatCard(format, data.isVercelEnvironment);
                     formatsList.appendChild(formatCard);
                 });
                 
@@ -293,19 +315,45 @@
         /**
          * Create a format card element
          * @param {Object} format - Format data
+         * @param {boolean} isVercelEnvironment - Whether we're in Vercel environment
          * @returns {HTMLElement} Format card element
          */
-        function createFormatCard(format) {
+        function createFormatCard(format, isVercelEnvironment) {
             const card = document.createElement('div');
             card.className = 'format-card bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200';
             
             const fileSize = format.filesize || format.filesize_approx;
             const qualityBadgeColor = getQualityBadgeColor(format.height);
             
+            // Check if this format is supported in Vercel environment
+            const requiresMerging = !format.hasAudio;
+            const vercelSupported = format.vercelSupported !== false;
+            
             // Add audio badge based on whether the format has audio
-            const audioBadge = format.hasAudio 
-                ? '<span class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Audio ✓</span>'
-                : '<span class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Audio will be merged</span>';
+            let audioBadge = '';
+            if (format.hasAudio) {
+                audioBadge = '<span class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Audio ✓</span>';
+            } else if (isVercelEnvironment) {
+                audioBadge = '<span class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Cloud Restricted</span>';
+            } else {
+                audioBadge = '<span class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Audio will be merged</span>';
+            }
+            
+            // Determine if the download button should be disabled
+            const isDisabled = isVercelEnvironment && requiresMerging;
+            const buttonClass = isDisabled 
+                ? 'download-btn mt-4 w-full bg-gray-400 text-white py-2 px-4 rounded-lg cursor-not-allowed opacity-70'
+                : 'download-btn mt-4 w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-200 font-medium';
+            
+            // Add warning for Vercel environment
+            let vercelWarning = '';
+            if (isVercelEnvironment && requiresMerging) {
+                vercelWarning = `
+                    <div class="text-xs text-red-600 mt-2">
+                        <span class="font-medium">⚠️ Not available in cloud environment</span>
+                    </div>
+                `;
+            }
             
             card.innerHTML = `
                 <div class="flex flex-col h-full">
@@ -332,11 +380,13 @@
                     </div>
                     
                     <button 
-                        onclick="downloadVideo('${format.itag}')" 
-                        class="download-btn mt-4 w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-200 font-medium"
+                        onclick="${isDisabled ? '' : `downloadVideo('${format.itag}')`}" 
+                        class="${buttonClass}"
+                        ${isDisabled ? 'disabled' : ''}
                     >
-                        Download ${format.quality_label || format.height + 'p'}
+                        ${isDisabled ? 'Not Available in Cloud' : `Download ${format.quality_label || format.height + 'p'}`}
                     </button>
+                    ${vercelWarning}
                 </div>
             `;
             
@@ -377,8 +427,16 @@
             setLoading(true);
             
             try {
-                const response = await fetch(`/formats?url=${encodeURIComponent(url)}`);
+                console.log('Fetching formats for URL:', url);
+                const apiUrl = `/formats?url=${encodeURIComponent(url)}`;
+                console.log('API URL:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries([...response.headers.entries()]));
+                
                 const data = await response.json();
+                console.log('Response data:', data);
                 
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to fetch video information');
@@ -419,6 +477,13 @@
                 // Get format information
                 const format = currentVideoData.formats.find(f => f.itag === parseInt(itag));
                 const needsAudioMerge = format && !format.hasAudio;
+                const isVercelEnvironment = currentVideoData.isVercelEnvironment;
+                
+                // Check if this format is supported in Vercel environment
+                if (needsAudioMerge && isVercelEnvironment) {
+                    showError('This high-quality format requires merging audio and video, which is not supported in our cloud environment. Please use the local version for this feature.');
+                    return;
+                }
                 
                 // Show download modal if audio needs to be merged
                 if (needsAudioMerge) {

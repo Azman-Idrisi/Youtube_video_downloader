@@ -77,6 +77,9 @@ async function getVideoInfo(url) {
         const uniqueFormats = [];
         const seenHeights = new Set();
         
+        // Check if we're running in Vercel environment
+        const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+        
         for (const format of availableFormats) {
           if (!seenHeights.has(format.height) && format.itag) {
             seenHeights.add(format.height);
@@ -102,7 +105,9 @@ async function getVideoInfo(url) {
               bitrate: format.bitrate,
               hasAudio: format.hasAudio || false,
               hasVideo: format.hasVideo || false,
-              isAdaptive: !format.hasAudio // Video-only adaptive formats
+              isAdaptive: !format.hasAudio, // Video-only adaptive formats
+              requiresMerging: !format.hasAudio, // Flag formats that require merging
+              vercelSupported: format.hasAudio || !isVercel // Only formats with audio are supported in Vercel
             });
           }
         }
@@ -121,7 +126,8 @@ async function getVideoInfo(url) {
             : null,
           uploader: videoDetails.author.name,
           viewCount: videoDetails.viewCount,
-          formats: uniqueFormats
+          formats: uniqueFormats,
+          isVercelEnvironment: isVercel
         };
       } catch (error) {
         lastError = error;

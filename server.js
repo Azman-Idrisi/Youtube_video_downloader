@@ -797,30 +797,40 @@ async function downloadVideo(url, itag, res) {
 app.get('/formats', async (req, res) => {
   const { url } = req.query;
 
+  console.log('Received request for formats with URL:', url);
+
   if (!url) {
+    console.log('URL parameter is missing');
     return res.status(400).json({ error: 'URL parameter is required' });
   }
 
   // Validate YouTube URL using ytdl-core
   if (!ytdl.validateURL(url)) {
+    console.log('Invalid YouTube URL:', url);
     return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
   try {
+    console.log('URL is valid, attempting to get video info');
     // In Vercel environment, skip Puppeteer and use only ytdl-core
     if (isVercel) {
       console.log('Running in Vercel environment, using getVideoInfo instead of Puppeteer');
       const videoInfo = await getVideoInfo(url);
+      console.log('Successfully retrieved video info with getVideoInfo');
       return res.json(videoInfo);
     } else {
+      console.log('Using getVideoInfoWithPuppeteer for local environment');
       const videoInfo = await getVideoInfoWithPuppeteer(url);
+      console.log('Successfully retrieved video info with Puppeteer');
       return res.json(videoInfo);
     }
   } catch (error) {
     console.error('Error getting video info:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ 
       error: 'Failed to fetch video information', 
-      details: error.message 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

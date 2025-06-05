@@ -1,82 +1,77 @@
 # YouTube Video Downloader
 
-A personal-use YouTube video downloader web application built with Node.js, Express, and @distube/ytdl-core.
+A web application that allows users to download YouTube videos in various formats and qualities. Built with Node.js, Express, and modern web technologies.
 
 ## Features
 
-- Download YouTube videos in various MP4 qualities
-- Automatic merging of video and audio streams for best quality
-- Modern, responsive UI
-- Simple and intuitive interface
-- Displays video title, thumbnail, and available formats
-- Shows file size and quality information
-- Visual indicators for audio availability
-- Supports high-quality video formats with separate audio streams
-- Automatic FFmpeg integration for stream merging
+- 📺 Download YouTube videos in multiple quality options
+- 🎵 Download videos with audio
+- 🎞️ Support for high-quality video formats (1080p, 1440p, 4K)
+- 🔄 Automatic merging of video and audio streams for best quality
+- 📱 Responsive design that works on desktop and mobile
 
-## Prerequisites
+## Deployment Options
 
-- Node.js (v14 or higher)
-- npm (Node Package Manager)
+This application can be deployed in two ways, each with different capabilities:
 
-## Installation
+### 1. Local/Self-hosted Deployment
 
-1. Clone this repository or download the files
-2. Navigate to the project directory
-3. Install dependencies:
+When running the application locally or on a traditional server:
 
-```bash
-npm install
-```
+- ✅ All features are fully supported
+- ✅ High-quality video formats work properly
+- ✅ Audio and video merging is available
+- ✅ No limitations on file operations
 
-## Usage
+### 2. Vercel/Serverless Deployment
 
-1. Start the server:
+When deployed on Vercel or other serverless platforms:
 
-```bash
-npm start
-```
+- ✅ Basic video downloads work
+- ✅ Formats with combined audio and video work
+- ❌ High-quality formats that require merging are disabled
+- ❌ File system operations are limited due to serverless environment restrictions
 
-2. Open your browser and navigate to:
+## Why are there limitations on Vercel?
 
-```
-http://localhost:3000
-```
+Vercel's serverless functions run in a read-only filesystem environment with the following constraints:
 
-3. Enter a YouTube URL in the input field
-4. Click "Fetch Formats"
-5. Select your preferred format and click "Download"
+1. **No file system write access**: Serverless functions cannot write to the filesystem except for the `/tmp` directory
+2. **Limited `/tmp` space**: The `/tmp` directory has limited space (around 512MB)
+3. **Execution time limits**: Serverless functions have execution time limits (usually 10-60 seconds)
+4. **Ephemeral environment**: Files in `/tmp` are not guaranteed to persist between function invocations
 
-## How It Works
+These limitations prevent the application from merging separate audio and video streams, which is necessary for high-quality formats (1080p and above) that YouTube provides as separate streams.
 
-- For formats that already include both video and audio, the download is streamed directly
-- For high-quality formats that contain only video (no audio), the application:
-  1. Automatically finds the best available audio stream
-  2. Uses FFmpeg to merge the video and audio streams on-the-fly
-  3. Delivers a complete video file with audio to the user
+## Technical Details
 
-## Development
+The application uses:
 
-The server automatically restarts when files change:
+- `@distube/ytdl-core` for extracting YouTube video information and downloading
+- `fluent-ffmpeg` for merging audio and video streams (local deployment only)
+- `express` for the web server
+- Modern JavaScript and responsive design
 
-```bash
-npm start
-```
+## Setup and Running Locally
 
-## Notes
+1. Clone the repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Run the server:
+   ```
+   node server.js
+   ```
+4. Access the application at `http://localhost:3000`
 
-- This application is intended for personal use only
-- Please respect copyright laws and YouTube's Terms of Service
-- Some videos may not be available for download due to restrictions
-- The application uses @distube/ytdl-core for video extraction
-- FFmpeg is used for stream merging when necessary
+## Deploying to Vercel
 
-## Dependencies
+1. Fork this repository
+2. Connect your fork to Vercel
+3. Deploy
+4. Note that high-quality formats requiring audio/video merging will be disabled in the Vercel deployment
 
-- express: Web server framework
-- @distube/ytdl-core: YouTube downloading library
-- fluent-ffmpeg: FFmpeg wrapper for Node.js
-- ffmpeg-static: FFmpeg binaries for Node.js
-- cors: Cross-origin resource sharing
-- node-fetch: HTTP client
-- nodemon: Auto-restart during development 
+## License
+
+MIT License 

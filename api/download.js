@@ -27,6 +27,9 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
   
+  // Check if we're running in Vercel environment
+  const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+  
   try {
     // Get video info to get the title for filename
     const info = await ytdl.getInfo(url, {
@@ -54,6 +57,15 @@ module.exports = async (req, res) => {
     const format = info.formats.find(f => f.itag == itag);
     if (!format) {
       return res.status(400).json({ error: 'Requested format not found' });
+    }
+    
+    // Check if format requires merging and we're in Vercel environment
+    if (!format.hasAudio && format.hasVideo && isVercel) {
+      return res.status(400).json({ 
+        error: 'High-quality format not supported in Vercel deployment',
+        details: 'This high-quality format requires merging audio and video streams, which is not supported in our serverless deployment. Please select a format with both audio and video, or use the local version of the app for high-quality downloads.',
+        suggestedAction: 'Please select a format with "hasAudio: true" or use our desktop/local version for high-quality downloads.'
+      });
     }
     
     // Note: In serverless environment, we can only stream directly
