@@ -2,23 +2,37 @@
   "version": 2,
   "builds": [
     {
-      "src": "server.js",
+      "src": "*.js",
       "use": "@vercel/node",
       "config": {
-        "maxDuration": 60
+        "maxLambdaSize": "50mb"
       }
     }
   ],
   "routes": [
     {
+      "src": "/formats",
+      "dest": "/index.js"
+    },
+    {
+      "src": "/download",
+      "dest": "/index.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/index.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/server.js",
-      "headers": {
-        "cache-control": "s-maxage=0"
-      }
+      "dest": "/index.js"
     }
   ],
+  "functions": {
+    "index.js": {
+      "maxDuration": 60
+    }
+  },
   "env": {
-    "VERCEL": "true"
+    "NODE_ENV": "production"
   }
-} 
+}
