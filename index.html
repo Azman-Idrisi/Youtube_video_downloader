@@ -274,7 +274,19 @@
                 
                 document.getElementById('videoInfo').classList.remove('hidden');
             } else {
-                document.getElementById('noFormatsState').classList.remove('hidden');
+                // Check if there's an error message
+                const noFormatsState = document.getElementById('noFormatsState');
+                const noFormatsMessage = noFormatsState.querySelector('p');
+                
+                if (data.error) {
+                    noFormatsMessage.textContent = data.error;
+                } else {
+                    noFormatsMessage.textContent = 'No MP4 formats with both video and audio were found for this video. ' +
+                        'The video may not be available for download or may be in a restricted format.';
+                }
+                
+                document.getElementById('videoInfo').classList.remove('hidden');
+                noFormatsState.classList.remove('hidden');
             }
         }
 
@@ -375,7 +387,13 @@
                 displayVideoInfo(data);
             } catch (error) {
                 console.error('Error fetching formats:', error);
-                showError(error.message || 'Failed to fetch video information. Please check the URL and try again.');
+                
+                // Check for bot detection message
+                if (error.message.includes('bot detection')) {
+                    showError('YouTube is blocking this request. Please try a different video or try again later.');
+                } else {
+                    showError(error.message || 'Failed to fetch video information. Please check the URL and try again.');
+                }
             } finally {
                 setLoading(false);
             }

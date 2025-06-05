@@ -5,6 +5,7 @@ const fs = require('fs');
 const ytdl = require('@distube/ytdl-core');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
+const puppeteer = require('puppeteer');
 
 // Set ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -31,6 +32,180 @@ async function checkYtdlCore() {
 }
 
 /**
+ * Extract video information using Puppeteer (more reliable than ytdl-core)
+ * @param {string} url - YouTube video URL
+ * @returns {Promise} Video info and formats
+ */
+async function getVideoInfoWithPuppeteer(url) {
+  let browser = null;
+  
+  try {
+    console.log('Fetching video info with Puppeteer for:', url);
+    
+    // Launch browser
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set viewport and user agent
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+    
+    // Navigate to the video page
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Wait for title to be available
+    await page.waitForSelector('title', { timeout: 5000 });
+    
+    // Extract video information
+    const videoInfo = await page.evaluate(() => {
+      // Check if video is available
+      if (document.querySelector('.promo-title')) {
+        const promoText = document.querySelector('.promo-title').innerText;
+        if (promoText.includes('unavailable')) {
+          throw new Error('Video unavailable');
+        }
+      }
+      
+      // Get video title
+      const title = document.querySelector('meta[property="og:title"]')?.content || 
+                    document.querySelector('title')?.innerText?.replace(' - YouTube', '') || 
+                    'Unknown Title';
+      
+      // Get channel name
+      const channelName = document.querySelector('link[itemprop="name"]')?.content || 
+                          document.querySelector('[itemprop="author"] [itemprop="name"]')?.content || 
+                          'Unknown Channel';
+      
+      // Get thumbnail
+      const thumbnail = document.querySelector('meta[property="og:image"]')?.content || '';
+      
+      // Get video duration (in seconds)
+      let duration = 0;
+      const durationMeta = document.querySelector('meta[itemprop="duration"]')?.content;
+      if (durationMeta) {
+        // Parse ISO 8601 duration format (PT1H2M3S)
+        const match = durationMeta.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        if (match) {
+          const hours = parseInt(match[1] || 0);
+          const minutes = parseInt(match[2] || 0);
+          const seconds = parseInt(match[3] || 0);
+          duration = hours * 3600 + minutes * 60 + seconds;
+        }
+      }
+      
+      return {
+        title,
+        channelName,
+        thumbnail,
+        duration
+      };
+    });
+    
+    console.log('Video title:', videoInfo.title);
+    
+    // Now extract available formats using ytdl-core
+    try {
+      const info = await ytdl.getInfo(url, {
+        requestOptions: {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Referer': 'https://www.youtube.com/',
+            'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1'
+          }
+        }
+      });
+      
+      // Filter formats
+      let availableFormats = info.formats.filter(format => {
+        return format.hasVideo && 
+               format.container === 'mp4' &&
+               format.height &&
+               format.height >= 144;
+      });
+      
+      // Sort by quality (height) descending
+      availableFormats.sort((a, b) => (b.height || 0) - (a.height || 0));
+      
+      // Remove duplicates based on height
+      const uniqueFormats = [];
+      const seenHeights = new Set();
+      
+      for (const format of availableFormats) {
+        if (!seenHeights.has(format.height) && format.itag) {
+          seenHeights.add(format.height);
+          
+          // Calculate approximate file size if not available
+          let filesize = null;
+          if (format.contentLength) {
+            filesize = parseInt(format.contentLength);
+          } else if (format.bitrate && videoInfo.duration) {
+            // Rough estimation: bitrate * duration / 8
+            filesize = Math.floor((format.bitrate * videoInfo.duration) / 8);
+          }
+          
+          uniqueFormats.push({
+            itag: format.itag,
+            ext: 'mp4',
+            height: format.height,
+            width: format.width,
+            fps: format.fps || 30,
+            filesize: filesize,
+            quality_label: `${format.height}p${(format.fps && format.fps > 30) ? format.fps : ''}`,
+            qualityLabel: format.qualityLabel || `${format.height}p`,
+            bitrate: format.bitrate,
+            hasAudio: format.hasAudio || false,
+            hasVideo: format.hasVideo || false,
+            isAdaptive: !format.hasAudio
+          });
+        }
+      }
+      
+      console.log('Unique formats found:', uniqueFormats.length);
+      
+      return {
+        title: videoInfo.title,
+        duration: videoInfo.duration,
+        thumbnail: videoInfo.thumbnail,
+        uploader: videoInfo.channelName,
+        formats: uniqueFormats
+      };
+    } catch (ytdlError) {
+      console.error('ytdl-core error:', ytdlError.message);
+      
+      // If ytdl-core fails, return basic info without formats
+      return {
+        title: videoInfo.title,
+        duration: videoInfo.duration,
+        thumbnail: videoInfo.thumbnail,
+        uploader: videoInfo.channelName,
+        formats: [],
+        error: 'Could not retrieve formats: ' + ytdlError.message
+      };
+    }
+  } catch (error) {
+    console.error('Error in Puppeteer video info extraction:', error.message);
+    throw new Error('Failed to extract video information: ' + error.message);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
  * Extract video information and available formats using @distube/ytdl-core
  * @param {string} url - YouTube video URL
  * @returns {Promise} Video info and formats
@@ -48,9 +223,23 @@ async function getVideoInfo(url) {
     const info = await ytdl.getInfo(url, {
       requestOptions: {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Referer': 'https://www.youtube.com/',
+          'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'same-origin',
+          'sec-fetch-user': '?1',
+          'upgrade-insecure-requests': '1'
         }
       }
+    }).catch(error => {
+      console.error('ytdl.getInfo error:', error);
+      throw new Error(`Failed to fetch video info: ${error.message}`);
     });
 
     const videoDetails = info.videoDetails;
@@ -393,7 +582,7 @@ app.get('/formats', async (req, res) => {
   }
 
   try {
-    const videoInfo = await getVideoInfo(url);
+    const videoInfo = await getVideoInfoWithPuppeteer(url);
     res.json(videoInfo);
   } catch (error) {
     console.error('Error getting video info:', error);
@@ -424,7 +613,16 @@ app.get('/download', async (req, res) => {
     await downloadVideo(url, itag, res);
   } catch (error) {
     console.error('Error downloading video:', error);
-    if (!res.headersSent) {
+    
+    // Check for bot detection
+    if (error.message.includes('Sign in to confirm') || error.message.includes('bot')) {
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Failed to download video', 
+          details: 'YouTube is blocking this request due to bot detection. Try again later or try a different video.'
+        });
+      }
+    } else if (!res.headersSent) {
       res.status(500).json({ 
         error: 'Failed to download video', 
         details: error.message 
