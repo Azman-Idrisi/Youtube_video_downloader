@@ -388,9 +388,13 @@
             } catch (error) {
                 console.error('Error fetching formats:', error);
                 
-                // Check for bot detection message
+                // Check for different error messages
                 if (error.message.includes('bot detection')) {
                     showError('YouTube is blocking this request. Please try a different video or try again later.');
+                } else if (error.message.includes('serverless environment')) {
+                    showError('This video cannot be processed in our cloud environment. Please try a different video or a simpler URL.');
+                } else if (error.message.includes('Failed to extract video information')) {
+                    showError('Could not extract video information. Please try a different YouTube video or check if the video is available in your region.');
                 } else {
                     showError(error.message || 'Failed to fetch video information. Please check the URL and try again.');
                 }
