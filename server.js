@@ -429,7 +429,7 @@ async function downloadVideo(url, itag, res) {
       // Create temporary files for video and audio
       const tempDir = path.join(__dirname, 'temp');
       if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir);
+        fs.mkdirSync(tempDir); //jeorjeo
       }
       
       const tempVideoPath = path.join(tempDir, `video-${Date.now()}.mp4`);
